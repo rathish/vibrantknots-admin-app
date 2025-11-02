@@ -1,0 +1,346 @@
+@import './variables.scss';
+
+.container {
+  flex: 1;
+  background-color: $gray-50;
+}
+
+// Header Section
+.header {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding-horizontal: $spacing-5;
+  padding-vertical: 15px;
+}
+
+.title {
+  font-size: $font-xl;
+  font-weight: $font-semibold;
+  color: $gray-700;
+}
+
+.headerButtons {
+  flex-direction: row;
+  align-items: center;
+  gap: $spacing-3;
+}
+
+.searchButton {
+  width: $spacing-10;
+  height: $spacing-10;
+  border-radius: $spacing-5;
+  align-items: center;
+  justify-content: center;
+  background-color: $gray-100;
+}
+
+.addButton {
+  background-color: $primary;
+  width: $spacing-10;
+  height: $spacing-10;
+  border-radius: $spacing-5;
+  align-items: center;
+  justify-content: center;
+}
+
+.searchContainer {
+  flex: 1;
+  flex-direction: row;
+  align-items: center;
+  background-color: $gray-100;
+  border-radius: $spacing-5;
+  padding-horizontal: $spacing-4;
+}
+
+.searchInput {
+  flex: 1;
+  font-size: $font-lg;
+  padding-vertical: $spacing-2;
+  color: $gray-600;
+}
+
+.closeSearchButton {
+  padding: $spacing-1;
+}
+
+// Dropdown Section
+.dropdownContainer {
+  margin-horizontal: $spacing-5;
+  margin-bottom: $spacing-5;
+  position: relative;
+  z-index: 1000;
+}
+
+.dropdown {
+  background-color: $white;
+  border-width: 1px;
+  border-color: $gray-200;
+  border-radius: $radius-base;
+  padding-horizontal: $spacing-4;
+  padding-vertical: $spacing-3;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dropdownText {
+  font-size: $font-base;
+  color: $gray-600;
+  font-weight: $font-medium;
+}
+
+.dropdownMenu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background-color: $white;
+  border-width: 1px;
+  border-color: $gray-200;
+  border-radius: $radius-base;
+  margin-top: $spacing-1;
+  shadow-color: $black;
+  shadow-offset: { width: 0, height: 2 };
+  shadow-opacity: 0.1;
+  shadow-radius: $spacing-2;
+  elevation: 5;
+}
+
+.dropdownItem {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  padding-horizontal: $spacing-4;
+  padding-vertical: $spacing-3;
+  border-bottom-width: 1px;
+  border-bottom-color: $gray-100;
+}
+
+.dropdownItemText {
+  font-size: $font-base;
+  color: $gray-600;
+}
+
+.dropdownItemCount {
+  font-size: $font-sm;
+  color: $gray-500;
+  font-weight: $font-medium;
+}
+
+// Content Section
+.content {
+  flex: 1;
+  padding-horizontal: $spacing-5;
+}
+
+// Product Card Section
+.productCard {
+  background-color: $white;
+  border-radius: $radius-xl;
+  padding: $spacing-4;
+  margin-bottom: $spacing-4;
+  shadow-color: $black;
+  shadow-offset: { width: 0, height: 2 };
+  shadow-opacity: 0.1;
+  shadow-radius: $spacing-2;
+  elevation: 3;
+}
+
+.cardHeader {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: $spacing-4;
+}
+
+.headerLeft {
+  flex: 1;
+}
+
+.productName {
+  font-size: $font-xl;
+  font-weight: $font-bold;
+  color: $gray-700;
+  margin-bottom: $spacing-1;
+}
+
+.productSku {
+  font-size: $font-base;
+  color: $gray-500;
+  margin-bottom: $spacing-2;
+}
+
+.headerRow {
+  flex-direction: row;
+  align-items: center;
+  gap: $spacing-3;
+}
+
+.categoryTag {
+  font-size: $font-xs;
+  background-color: $gray-100;
+  padding-horizontal: $spacing-1;
+  padding-vertical: 2px;
+  border-radius: $radius-sm;
+  color: $gray-600;
+  font-weight: $font-medium;
+  max-width: 60px;
+  text-align: center;
+}
+
+.stockText {
+  font-size: $font-sm;
+  color: $success;
+  font-weight: $font-semibold;
+}
+
+.lowStock {
+  color: $danger;
+}
+
+.price {
+  font-size: $font-2xl;
+  font-weight: $font-bold;
+  color: $primary;
+}
+
+// Body Section
+.cardBody {
+  margin-bottom: $spacing-4;
+}
+
+.imageGallery {
+  flex-direction: row;
+}
+
+.imageContainer {
+  margin-right: $spacing-3;
+}
+
+.productImage {
+  width: $spacing-20;
+  height: $spacing-20;
+  border-radius: $radius-lg;
+  background-color: $gray-100;
+}
+
+.addImageButton {
+  width: $spacing-20;
+  height: $spacing-20;
+  border-radius: $radius-lg;
+  background-color: $gray-50;
+  border-width: 2px;
+  border-color: $gray-200;
+  border-style: dashed;
+  align-items: center;
+  justify-content: center;
+}
+
+// Footer Section
+.cardFooter {
+  flex-direction: row;
+  justify-content: space-around;
+  padding-top: $spacing-4;
+  border-top-width: 1px;
+  border-top-color: $gray-100;
+}
+
+.footerButton {
+  flex-direction: row;
+  align-items: center;
+  gap: $spacing-2;
+  padding-vertical: $spacing-2;
+  padding-horizontal: $spacing-3;
+}
+
+.footerButtonText {
+  font-size: $font-base;
+  font-weight: $font-medium;
+  color: $primary;
+}
+
+// Modal Styles
+.modalOverlay {
+  flex: 1;
+  background-color: rgba(0, 0, 0, 0.5);
+  justify-content: center;
+  align-items: center;
+}
+
+.modalContent {
+  background-color: $white;
+  border-radius: $radius-lg;
+  padding: $spacing-5;
+  width: 90%;
+  max-height: 80%;
+}
+
+.modalHeader {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: $spacing-5;
+}
+
+.modalTitle {
+  font-size: $font-xl;
+  font-weight: $font-semibold;
+  color: $gray-700;
+}
+
+.input {
+  border-width: 1px;
+  border-color: $gray-200;
+  border-radius: $radius-base;
+  padding-horizontal: $spacing-3;
+  padding-vertical: $spacing-2;
+  margin-bottom: 15px;
+  font-size: $font-lg;
+  color: $gray-600;
+}
+
+.pickerContainer {
+  margin-bottom: 15px;
+}
+
+.label {
+  font-size: $font-base;
+  font-weight: $font-medium;
+  margin-bottom: $spacing-2;
+  color: $gray-600;
+}
+
+.categoryOption {
+  background-color: $gray-100;
+  padding-horizontal: $spacing-3;
+  padding-vertical: $spacing-2;
+  border-radius: $radius-xl;
+  margin-right: $spacing-2;
+}
+
+.selectedOption {
+  background-color: $primary;
+}
+
+.optionText {
+  font-size: $font-base;
+  color: $gray-500;
+}
+
+.selectedOptionText {
+  color: $white;
+}
+
+.saveButton {
+  background-color: $primary;
+  padding-vertical: $spacing-3;
+  border-radius: $radius-base;
+  align-items: center;
+}
+
+.saveButtonText {
+  color: $white;
+  font-size: $font-lg;
+  font-weight: $font-semibold;
+}

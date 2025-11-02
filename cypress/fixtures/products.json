@@ -1,0 +1,28 @@
+{
+  "sampleProduct": {
+    "title": "Test Product",
+    "description": "Test product description",
+    "material": "Cotton",
+    "pattern": "Solid",
+    "color_primary": "#FF0000",
+    "category_id": "test-category-id"
+  },
+  "sampleVariant": {
+    "color": "Red",
+    "color_code": "#FF0000",
+    "sku": "TEST-RED-001",
+    "stock": 100
+  },
+  "sampleStock": {
+    "current_stock": 150,
+    "reserved_stock": 20,
+    "available_stock": 130,
+    "reorder_level": 25,
+    "unit_of_measure": "pieces"
+  },
+  "samplePricing": {
+    "retail_price": "199.99",
+    "wholesale_price": "149.99",
+    "currency": "USD"
+  }
+}

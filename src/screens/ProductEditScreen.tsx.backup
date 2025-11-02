@@ -1,0 +1,1357 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, SafeAreaView, TextInput, Image, Alert, StyleSheet, KeyboardAvoidingView, Platform, Modal } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { updateProduct, uploadProductImage, markDirty, Product, Category } from '../store/collectionsSlice';
+import { StockApiService } from '../core/api-flow/apiService';
+import { STRINGS } from '../constants/i18n';
+
+interface ProductEditScreenProps {
+  navigation: {
+    goBack: () => void;
+  };
+  product: Product;
+}
+
+export default function ProductEditScreen({ navigation, product }: ProductEditScreenProps): JSX.Element {
+  const dispatch = useAppDispatch();
+  const { categories, loading } = useAppSelector((state) => state.collections);
+  
+  // Currency symbol mapping
+  const getCurrencySymbol = (currency: string) => {
+    const symbols = {
+      'USD': '$',
+      'EUR': '€', 
+      'GBP': '£',
+      'INR': '₹',
+      'JPY': '¥',
+      'CNY': '¥',
+      'CAD': 'C$',
+      'AUD': 'A$'
+    };
+    return symbols[currency] || currency;
+  };
+  
+  const [editedProduct, setEditedProduct] = useState<Product>({
+    ...product,
+    variants: product.variants || [],
+    stock: product.stock || {
+      current_stock: 0,
+      reserved_stock: 0,
+      available_stock: 0,
+      reorder_level: 10,
+      max_stock_level: 1000,
+      unit_of_measure: 'pieces',
+      warehouse_location: '',
+      batch_number: '',
+      last_updated: new Date().toISOString(),
+      updated_by: 'admin'
+    },
+    price_table: product.price_table || {
+      id: '',
+      product_id: product.id,
+      retail_price: '',
+      wholesale_price: '',
+      currency: 'USD',
+      version: 1,
+      created_by: 'admin',
+      created_time: '',
+      modified_by: null,
+      modified_time: null
+    }
+  });
+  
+  const [colorPickerVisible, setColorPickerVisible] = useState(false);
+  const [selectedVariantIndex, setSelectedVariantIndex] = useState<number>(0);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalMessage, setModalMessage] = useState('');
+  const [modalTitle, setModalTitle] = useState('');
+
+  // Fetch variants, stock, and price when component mounts
+  useEffect(() => {
+    const fetchProductData = async () => {
+      try {
+        // Fetch variants
+        const variantsResponse = await fetch(`http://localhost:8000/api/v1/products/${product.id}/variants`);
+        if (variantsResponse.ok) {
+          const variants = await variantsResponse.json();
+          setEditedProduct(prev => ({
+            ...prev,
+            variants: Array.isArray(variants) ? variants : []
+          }));
+        }
+
+        // Fetch stock records with pricing per partner using api-flow
+        StockApiService.fetchProductStock(product.id, (stepName: string, status: string, result: any) => {
+          if (status === "Completed" && stepName === "fetchProductStock") {
+            const stockData = result.http_response;
+            setEditedProduct(prev => ({
+              ...prev,
+              stock_records: Array.isArray(stockData) ? stockData : stockData.data || []
+            }));
+          }
+        });
+      } catch (error) {
+      }
+    };
+
+    fetchProductData();
+  }, [product.id]);
+
+  const handleCameraColorPick = async (variantIndex: number) => {
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        // For demo purposes, extract a dominant color from image
+        // In a real app, you'd use image processing to get the actual color
+        const dominantColors = ['#8B4513', '#228B22', '#4169E1', '#DC143C', '#FF8C00', '#9932CC'];
+        const randomColor = dominantColors[Math.floor(Math.random() * dominantColors.length)];
+        
+        const newVariants = [...editedProduct.variants];
+        newVariants[variantIndex] = {...newVariants[variantIndex], color_code: randomColor};
+        setEditedProduct({...editedProduct, variants: newVariants});
+        
+        Alert.alert('Color Captured', `Detected color: ${randomColor}`);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to capture color from camera');
+    }
+  };
+
+  // Helper function to get variant data matching backend schema
+  const getVariantData = (variant: any) => ({
+    variant_name: variant.variant_name || `${variant.color_name} Variant`,
+    color_name: variant.color_name,
+    color_code: variant.color_code,
+    sku_suffix: variant.sku_suffix,
+    range_details: variant.range_details || {},
+    additional_images: variant.additional_images || {},
+    is_active: variant.is_active !== undefined ? variant.is_active : true
+  });
+
+  // Helper function to get only required stock attributes
+  const getRequiredStockData = (stock: any) => {
+    const data: any = { updated_by: 'admin' };
+    if (stock.current_stock !== undefined) data.current_stock = stock.current_stock;
+    if (stock.reserved_stock !== undefined) data.reserved_stock = stock.reserved_stock;
+    if (stock.reorder_level !== undefined) data.reorder_level = stock.reorder_level;
+    if (stock.unit_of_measure) data.unit_of_measure = stock.unit_of_measure;
+    return data;
+  };
+
+  // Helper function to get product data matching backend schema
+  const getProductUpdateData = (product: any) => {
+    const data = {
+      title: product.title || '',
+      description: product.description || null,
+      sku_id: product.sku_id || null,
+      material: product.material || null,
+      pattern: product.pattern || null,
+      color_primary: product.color_primary || null,
+      colors: product.colors || [],
+      width_estimate_cm: product.width_estimate_cm || null,
+      scale: product.scale || null,
+      special_features: product.special_features || [],
+      image_urls: product.image_urls || {},
+      created_by: product.created_by || null,
+      status: product.status || 'draft',
+      enabled: product.enabled !== undefined ? product.enabled : true
+    };
+    
+    // Add category fields if they exist
+    if (product.category_id) data.category_id = product.category_id;
+    if (product.category_ids) data.category_ids = product.category_ids;
+    
+    return data;
+  };
+
+  const handleSave = async () => {
+    try {
+      
+        console.log('Saving product:', editedProduct.title);      // Validate variants before saving
+      if (editedProduct.variants && editedProduct.variants.length > 0) {
+        const invalidVariants = editedProduct.variants.filter(variant => 
+          !variant.color_name || !variant.color_code || !variant.sku_suffix
+        );
+        
+        if (invalidVariants.length > 0) {
+          Alert.alert('Validation Error', 'Please fill in all required variant fields (Color Name, Color Code, SKU Suffix) before saving.');
+          return;
+        }
+      }
+      
+      let productUpdateSuccess = false;
+      let priceUpdateSuccess = false;
+      let stockUpdateSuccess = false;
+
+      // Try to update product details
+      try {
+
+        const productResponse = await fetch(`http://localhost:8000/products/${editedProduct.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(getProductUpdateData(editedProduct)),
+        });
+        
+        if (productResponse.ok) {
+          productUpdateSuccess = true;
+        } else {
+          const errorText = await productResponse.text();
+        }
+      } catch (error) {
+      }
+
+      // Try to update stock regardless of product update result
+      if (editedProduct.stock) {
+        try {
+          
+          const stockMethod = product.stock ? 'PUT' : 'POST';
+          const stockResponse = await fetch(`http://localhost:8000/api/v1/products/${editedProduct.id}/stock`, {
+            method: stockMethod,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(getRequiredStockData(editedProduct.stock)),
+          });
+
+          if (stockResponse.ok) {
+            const stockResult = await stockResponse.json();
+            stockUpdateSuccess = true;
+          } else {
+            const errorText = await stockResponse.text();
+          }
+        } catch (error) {
+        }
+      }
+
+      // Try to update price table
+      if (editedProduct.price_table) {
+        try {
+          const priceMethod = product.price_table ? 'PUT' : 'POST';
+          const priceResponse = await fetch(`http://localhost:8000/api/v1/products/${editedProduct.id}/price`, {
+            method: priceMethod,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              retail_price: editedProduct.price_table.retail_price || null,
+              wholesale_price: editedProduct.price_table.wholesale_price || null,
+              currency: editedProduct.price_table.currency || 'USD',
+              updated_by: 'admin'
+            }),
+          });
+
+          if (priceResponse.ok) {
+            const priceResult = await priceResponse.json();
+            priceUpdateSuccess = true;
+          } else {
+            const errorText = await priceResponse.text();
+          }
+        } catch (error) {
+        }
+      }
+
+      // Handle variant creation (only create new variants without IDs)
+      if (editedProduct.variants && editedProduct.variants.length > 0) {
+        try {
+          
+          for (const variant of editedProduct.variants) {
+            // Only create variants that don't have an ID (new variants)
+            if (variant.id) {
+              continue;
+            }
+            
+            // Skip variants with empty required fields
+            if (!variant.color_name || !variant.color_code || !variant.sku_suffix) {
+              continue;
+            }
+            
+            const variantResponse = await fetch(`http://localhost:8000/api/v1/products/${editedProduct.id}/variants`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(getVariantData(variant)),
+            });
+
+            
+            if (variantResponse.ok) {
+              const responseData = await variantResponse.json();
+              // Mark data as dirty to trigger refresh
+              dispatch(markDirty());
+            } else {
+              const errorText = await variantResponse.text();
+            }
+          }
+        } catch (error) {
+        }
+      }
+
+      // Show appropriate success/error message
+      if (productUpdateSuccess) {
+        dispatch(markDirty());
+        Alert.alert('Success', 'Product updated successfully');
+        navigation.goBack();
+      } else {
+        Alert.alert('Error', 'Failed to update product. Check console for details.');
+      }
+    } catch (error) {
+      Alert.alert('Error', `Failed to update product: ${error.message}`);
+    }
+  };
+
+  const handleAddImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      try {
+        const response = await fetch(result.assets[0].uri);
+        const blob = await response.blob();
+        const file = new File([blob], 'image.jpg', { type: 'image/jpeg' });
+        
+        await dispatch(uploadProductImage({ productId: product.id, imageFile: file })).unwrap();
+        dispatch(markDirty());
+        Alert.alert('Success', 'Image uploaded successfully');
+      } catch (error) {
+        Alert.alert('Error', 'Failed to upload image');
+      }
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.container} testID="product-edit-screen">
+      <KeyboardAvoidingView 
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={styles.fixedHeader}>
+          <TouchableOpacity onPress={navigation.goBack} style={styles.backButton} testID="back-button">
+            <Ionicons name="arrow-back" size={24} color="#333" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle} testID="edit-header-title">Edit Product</Text>
+          <TouchableOpacity onPress={handleSave} style={styles.saveButton} testID="save-button">
+            <Text style={styles.saveButtonText}>Save</Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={styles.scrollContent} contentContainerStyle={styles.scrollContentContainer}>
+        {/* Basic Information */}
+        <View style={styles.section} testID="basic-info-section">
+          <Text style={styles.sectionTitle}>Basic Information</Text>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Title</Text>
+            <TextInput
+              style={styles.input}
+              value={editedProduct.title}
+              onChangeText={(text) => setEditedProduct({...editedProduct, title: text})}
+              placeholder="Product title"
+              testID="title-input"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>SKU ID</Text>
+            <TextInput
+              style={styles.input}
+              value={editedProduct.sku_id || ''}
+              onChangeText={(text) => setEditedProduct({...editedProduct, sku_id: text})}
+              placeholder="SKU ID"
+              testID="sku-input"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Description</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={editedProduct.description || ''}
+              onChangeText={(text) => setEditedProduct({...editedProduct, description: text})}
+              placeholder="Product description"
+              multiline
+              numberOfLines={3}
+              testID="description-input"
+            />
+          </View>
+        </View>
+
+        {/* Categories */}
+        <View style={styles.section} testID="categories-section">
+          <Text style={styles.sectionTitle}>Categories</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
+            {categories.map((category: Category) => {
+              const isSelected = editedProduct.category_id === category.id;
+              return (
+                <TouchableOpacity
+                  key={category.id}
+                  style={[styles.categoryOption, isSelected && styles.selectedCategory]}
+                  onPress={() => setEditedProduct({...editedProduct, category_id: category.id})}
+                  testID={`category-${category.id}`}
+                >
+                  <Text style={[styles.categoryText, isSelected && styles.selectedCategoryText]}>
+                    {category.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Product Details */
+        <View style={styles.section} testID="product-details-section">
+          <Text style={styles.sectionTitle}>Product Details</Text>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Material</Text>
+            <TextInput
+              style={styles.input}
+              value={editedProduct.material || ''}
+              onChangeText={(text) => setEditedProduct({...editedProduct, material: text})}
+              placeholder="Enter material"
+              testID="material-input"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Pattern</Text>
+            <TextInput
+              style={styles.input}
+              value={editedProduct.pattern || ''}
+              onChangeText={(text) => setEditedProduct({...editedProduct, pattern: text})}
+              placeholder="Enter pattern"
+              testID="pattern-input"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Primary Color</Text>
+            <TextInput
+              style={styles.input}
+              value={editedProduct.color_primary || ''}
+              onChangeText={(text) => setEditedProduct({...editedProduct, color_primary: text})}
+              placeholder="Enter primary color"
+              testID="color-primary-input"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Width Estimate (cm)</Text>
+            <TextInput
+              style={styles.input}
+              value={editedProduct.width_estimate_cm?.toString() || ''}
+              onChangeText={(text) => setEditedProduct({...editedProduct, width_estimate_cm: parseInt(text) || null})}
+              placeholder="Enter width in cm"
+              keyboardType="numeric"
+              testID="width-input"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Scale</Text>
+            <TextInput
+              style={styles.input}
+              value={editedProduct.scale || ''}
+              onChangeText={(text) => setEditedProduct({...editedProduct, scale: text})}
+              placeholder="Enter scale"
+              testID="scale-input"
+            />
+          </View>
+        </View>
+                  ]}
+                  onPress={() => {
+                    const currentIds = editedProduct.category_ids || (editedProduct.category_id ? [editedProduct.category_id] : []);
+                    const newIds = isSelected 
+                      ? currentIds.filter(id => id !== category.id)
+                      : [...currentIds, category.id];
+                    setEditedProduct({...editedProduct, category_ids: newIds, category_id: newIds[0] || null});
+                  }}
+                >
+                  <Text style={[
+                    styles.categoryText,
+                    isSelected && styles.selectedCategoryText
+                  ]}>
+                    {category.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Product Details</Text>
+          
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Material</Text>
+            <TextInput
+              style={styles.input}
+              value={editedProduct.material}
+              onChangeText={(text) => setEditedProduct({...editedProduct, material: text})}
+              placeholder="Material"
+              testID="material-input"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Pattern</Text>
+            <TextInput
+              style={styles.input}
+              value={editedProduct.pattern}
+              onChangeText={(text) => setEditedProduct({...editedProduct, pattern: text})}
+              placeholder="Pattern"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Primary Color</Text>
+            <TextInput
+              style={styles.input}
+              value={editedProduct.color_primary}
+              onChangeText={(text) => setEditedProduct({...editedProduct, color_primary: text})}
+              placeholder="Primary color"
+            />
+          </View>
+        </View>
+
+        <View style={styles.section} testID="stock-section">
+          <Text style={styles.sectionTitle}>Stock Management</Text>
+          
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Current Stock</Text>
+            <TextInput
+              style={styles.input}
+              value={editedProduct.stock?.current_stock?.toString() || ''}
+              onChangeText={(text) => setEditedProduct({
+                ...editedProduct,
+                stock: {
+                  ...editedProduct.stock,
+                  current_stock: parseInt(text) || 0
+                }
+              })}
+              placeholder="Current stock quantity"
+              keyboardType="numeric"
+              testID="current-stock-input"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Reserved Stock</Text>
+            <TextInput
+              style={styles.input}
+              value={editedProduct.stock?.reserved_stock?.toString() || ''}
+              onChangeText={(text) => setEditedProduct({
+                ...editedProduct,
+                stock: {
+                  ...editedProduct.stock,
+                  reserved_stock: parseInt(text) || 0
+                }
+              })}
+              placeholder="Reserved stock quantity"
+              keyboardType="numeric"
+              testID="reserved-stock-input"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Available Stock</Text>
+            <TextInput
+              style={styles.input}
+              value={editedProduct.stock?.available_stock?.toString() || ''}
+              onChangeText={(text) => setEditedProduct({
+                ...editedProduct,
+                stock: {
+                  ...editedProduct.stock,
+                  available_stock: parseInt(text) || 0
+                }
+              })}
+              placeholder="Available stock quantity"
+              keyboardType="numeric"
+              testID="available-stock-input"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Reorder Level</Text>
+            <TextInput
+              style={styles.input}
+              value={editedProduct.stock?.reorder_level?.toString() || ''}
+              onChangeText={(text) => setEditedProduct({
+                ...editedProduct,
+                stock: {
+                  ...editedProduct.stock,
+                  reorder_level: parseInt(text) || 0
+                }
+              })}
+              placeholder="Minimum stock level"
+              keyboardType="numeric"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Unit of Measure</Text>
+            <TextInput
+              style={styles.input}
+              value={editedProduct.stock?.unit_of_measure || ''}
+              onChangeText={(text) => setEditedProduct({
+                ...editedProduct,
+                stock: {
+                  ...editedProduct.stock,
+                  unit_of_measure: text
+                }
+              })}
+              placeholder="e.g., meters, pieces, kg"
+            />
+          </View>
+        </View>
+
+        {/* Variants */}
+        <View style={styles.section} testID="variants-section">
+          <Text style={styles.sectionTitle}>Variants</Text>
+          {editedProduct.variants && editedProduct.variants.map((variant, index) => (
+            <View key={variant.id || index} style={styles.variantItem}>
+              <View style={styles.variantHeader}>
+                <View style={[styles.variantColorPreview, { backgroundColor: variant.color_code || variant.color }]} />
+                <Text style={styles.variantTitle}>Variant {index + 1}</Text>
+                <TouchableOpacity 
+                  onPress={async () => {
+                    const variant = editedProduct.variants[index];
+                    
+                    // If variant has an ID, delete it from backend
+                    if (variant.id) {
+                      try {
+                        const deleteResponse = await fetch(`http://localhost:8000/api/v1/products/${editedProduct.id}/variants/${variant.id}`, {
+                          method: 'DELETE',
+                        });
+                        
+                        const responseText = await deleteResponse.text();
+                        
+                        if (deleteResponse.ok) {
+                          // Mark data as dirty to trigger refresh
+                          dispatch(markDirty());
+                        } else {
+                          Alert.alert('Error', 'Failed to delete variant from server');
+                          return; // Don't remove from local state if backend delete failed
+                        }
+                      } catch (error) {
+                        Alert.alert('Error', 'Network error while deleting variant');
+                        return; // Don't remove from local state if there was an error
+                      }
+                    }
+                    
+                    // Remove from local state only if backend delete succeeded or it's a new variant
+                    const newVariants = editedProduct.variants.filter((_, i) => i !== index);
+                    setEditedProduct({...editedProduct, variants: newVariants});
+                  }}
+                  style={styles.removeVariantButton}
+                >
+                  <Text style={styles.removeVariantText}>Remove</Text>
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Color Name *</Text>
+                <TextInput
+                  style={[styles.input, (!variant.color_name && styles.errorInput)]}
+                  value={variant.color_name}
+                  onChangeText={(text) => {
+                    const newVariants = [...editedProduct.variants];
+                    newVariants[index] = {...variant, color_name: text};
+                    setEditedProduct({...editedProduct, variants: newVariants});
+                  }}
+                  placeholder="Color name"
+                  testID="variant-color-input"
+                />
+                {!variant.color_name && <Text style={styles.errorText}>Color name is required</Text>}
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Color Code (Hex) *</Text>
+                <View style={styles.colorInputContainer}>
+                  <TextInput
+                    style={[styles.colorInput, (!variant.color_code && styles.errorInput)]}
+                    value={variant.color_code}
+                    onChangeText={(text) => {
+                      const newVariants = [...editedProduct.variants];
+                      newVariants[index] = {...variant, color_code: text};
+                      setEditedProduct({...editedProduct, variants: newVariants});
+                    }}
+                    placeholder="#FF0000"
+                    testID="variant-color-code-input"
+                  />
+                  <TouchableOpacity 
+                    style={styles.colorPickerButton}
+                    onPress={() => {
+                      setSelectedVariantIndex(index);
+                      setColorPickerVisible(true);
+                    }}
+                  >
+                    <View style={[styles.colorPreview, { backgroundColor: variant.color_code || '#000' }]} />
+                  </TouchableOpacity>
+                </View>
+                {!variant.color_code && <Text style={styles.errorText}>Color code is required</Text>}
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>SKU Suffix *</Text>
+                <TextInput
+                  style={[styles.input, (!variant.sku_suffix && styles.errorInput)]}
+                  value={variant.sku_suffix}
+                  onChangeText={(text) => {
+                    const newVariants = [...editedProduct.variants];
+                    newVariants[index] = {...variant, sku_suffix: text};
+                    setEditedProduct({...editedProduct, variants: newVariants});
+                  }}
+                  placeholder="RED-001"
+                />
+                {!variant.sku_suffix && <Text style={styles.errorText}>SKU suffix is required</Text>}
+              </View>
+            </View>
+          ))}
+          
+          <TouchableOpacity 
+            style={styles.addVariantButton}
+            onPress={() => {
+              const newVariant = {
+                variant_name: '',
+                color_name: '',
+                color_code: '#000000',
+                sku_suffix: '',
+                range_details: { size: "One Size" },
+                is_active: true
+              };
+              const newVariants = [...(editedProduct.variants || []), newVariant];
+              setEditedProduct({...editedProduct, variants: newVariants});
+            }}
+            testID="add-variant-button"
+          >
+            <Text style={styles.addVariantText}>+ Add Variant</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Stock and Price */}
+        <View style={styles.section} testID="stock-records-section">
+          <Text style={styles.sectionTitle}>Stock and Price</Text>
+          {editedProduct.stock_records?.map((stockRecord, index) => (
+            <View key={stockRecord.id || index} style={styles.stockRecordCard}>
+              <Text style={styles.stockRecordTitle}>{STRINGS.PARTNER}: {stockRecord.partner_id}</Text>
+              
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Available Quantity</Text>
+                <TextInput
+                  style={styles.input}
+                  value={stockRecord.quantity_available?.toString() || ''}
+                  onChangeText={(text) => {
+                    const newStockRecords = [...(editedProduct.stock_records || [])];
+                    newStockRecords[index] = {
+                      ...newStockRecords[index],
+                      quantity_available: parseInt(text) || 0
+                    };
+                    setEditedProduct({...editedProduct, stock_records: newStockRecords});
+                  }}
+                  placeholder="Enter available quantity"
+                  keyboardType="numeric"
+                  testID={`stock-${index}-available`}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>{STRINGS.RETAIL_PRICE} ({getCurrencySymbol(stockRecord.currency || 'INR')})</Text>
+                <TextInput
+                  style={styles.input}
+                  value={stockRecord.retail_price?.toString() || ''}
+                  onChangeText={(text) => {
+                    const newStockRecords = [...(editedProduct.stock_records || [])];
+                    newStockRecords[index] = {
+                      ...newStockRecords[index],
+                      retail_price: parseFloat(text) || 0
+                    };
+                    setEditedProduct({...editedProduct, stock_records: newStockRecords});
+                  }}
+                  placeholder={STRINGS.ENTER_RETAIL_PRICE}
+                  keyboardType="numeric"
+                  testID={`price-${index}-retail`}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>{STRINGS.WHOLESALE_PRICE} ({getCurrencySymbol(stockRecord.currency || 'INR')})</Text>
+                <TextInput
+                  style={styles.input}
+                  value={stockRecord.wholesale_price?.toString() || ''}
+                  onChangeText={(text) => {
+                    const newStockRecords = [...(editedProduct.stock_records || [])];
+                    newStockRecords[index] = {
+                      ...newStockRecords[index],
+                      wholesale_price: parseFloat(text) || 0
+                    };
+                    setEditedProduct({...editedProduct, stock_records: newStockRecords});
+                  }}
+                  placeholder={STRINGS.ENTER_WHOLESALE_PRICE}
+                  keyboardType="numeric"
+                  testID={`price-${index}-wholesale`}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={styles.updateButton}
+                onPress={() => {
+                  const stockData = {
+                    quantity_available: stockRecord.quantity_available,
+                    quantity_reserved: stockRecord.quantity_reserved,
+                    retail_price: stockRecord.retail_price,
+                    wholesale_price: stockRecord.wholesale_price,
+                    currency: stockRecord.currency
+                  };
+                  StockApiService.updateProductStock(product.id, stockData, (stepName: string, status: string, result: any) => {
+                    if (status === "Completed") {
+                      setModalTitle(STRINGS.SUCCESS);
+                      setModalMessage(STRINGS.STOCK_RECORD_UPDATED);
+                      setModalVisible(true);
+                    } else if (status === "Failed") {
+                      setModalTitle(STRINGS.ERROR);
+                      setModalMessage(STRINGS.FAILED_UPDATE_STOCK);
+                      setModalVisible(true);
+                    }
+                  });
+                }}
+                testID={`update-stock-${index}`}
+              >
+                <Text style={styles.updateButtonText}>{STRINGS.UPDATE_STOCK_RECORD}</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+          
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => {
+              const newStockData = {
+                partner_id: '00000000-0000-0000-0000-000000000001',
+                quantity_available: 0,
+                quantity_reserved: 0,
+                retail_price: 0.0,
+                wholesale_price: 0.0,
+                currency: 'INR'
+              };
+              StockApiService.createProductStock(product.id, newStockData, (stepName: string, status: string, result: any) => {
+                if (status === "Completed") {
+                  const newStockRecord = result.http_response;
+                  setEditedProduct({
+                    ...editedProduct,
+                    stock_records: [...(editedProduct.stock_records || []), newStockRecord]
+                  });
+                } else if (status === "Failed") {
+                  setModalTitle(STRINGS.ERROR);
+                  setModalMessage(STRINGS.FAILED_CREATE_STOCK);
+                  setModalVisible(true);
+                }
+              });
+            }}
+            testID="add-stock-record"
+          >
+            <Text style={styles.addButtonText}>{STRINGS.ADD_STOCK_RECORD}</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.section} testID="images-section">
+          <Text style={styles.sectionTitle}>Images</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageGallery}>
+            {editedProduct.image_urls && Object.keys(editedProduct.image_urls).length > 0 &&
+              Object.entries(editedProduct.image_urls).map(([imageType, imageUrl], index) => (
+                <View key={index} style={styles.imageContainer}>
+                  <Image source={{ uri: imageUrl }} style={styles.productImage} />
+                  <TouchableOpacity 
+                    style={styles.deleteImageButton}
+                    onPress={async () => {
+                      try {
+                        const deleteResponse = await fetch(`http://localhost:8000/api/v1/products/${editedProduct.id}/images/${imageType}`, {
+                          method: 'DELETE',
+                        });
+                        
+                        if (deleteResponse.ok) {
+                          // Remove from local state
+                          const newImageUrls = { ...editedProduct.image_urls };
+                          delete newImageUrls[imageType];
+                          setEditedProduct({ ...editedProduct, image_urls: newImageUrls });
+                          dispatch(markDirty());
+                        } else {
+                          Alert.alert('Error', 'Failed to delete image');
+                        }
+                      } catch (error) {
+                        Alert.alert('Error', 'Network error while deleting image');
+                      }
+                    }}
+                  >
+                    <Ionicons name="close-circle" size={20} color="#ff4444" />
+                  </TouchableOpacity>
+                </View>
+              ))
+            }
+            <TouchableOpacity style={styles.addImageButton} onPress={handleAddImage} testID="add-image-button">
+              <Ionicons name="add" size={24} color="#8B5CF6" />
+              <Text style={styles.addImageText}>Add Image</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </ScrollView>
+      
+      <Modal
+        visible={colorPickerVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setColorPickerVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.colorPickerModal}>
+            <Text style={styles.modalTitle}>Choose Color</Text>
+            
+            <View style={styles.colorGrid}>
+              {['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080', '#FFC0CB', '#A52A2A', '#000000', '#FFFFFF'].map((color) => (
+                <TouchableOpacity
+                  key={color}
+                  style={[styles.colorOption, { backgroundColor: color }]}
+                  onPress={() => {
+                    const newVariants = [...editedProduct.variants];
+                    newVariants[selectedVariantIndex] = {...newVariants[selectedVariantIndex], color_code: color};
+                    setEditedProduct({...editedProduct, variants: newVariants});
+                    setColorPickerVisible(false);
+                  }}
+                />
+              ))}
+            </View>
+            
+            <TouchableOpacity
+              style={styles.cameraButton}
+              onPress={() => {
+                setColorPickerVisible(false);
+                handleCameraColorPick(selectedVariantIndex);
+              }}
+            >
+              <Ionicons name="camera" size={24} color="#fff" />
+              <Text style={styles.cameraButtonText}>Capture Color</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setColorPickerVisible(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.alertModal}>
+            <Text style={styles.alertTitle}>{modalTitle}</Text>
+            <Text style={styles.alertMessage}>{modalMessage}</Text>
+            <TouchableOpacity
+              style={styles.alertButton}
+              onPress={() => setModalVisible(false)}
+            >
+              <Text style={styles.alertButtonText}>{STRINGS.OK}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  fixedHeader: {
+    position: 'sticky' as any,
+    top: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e5e5',
+    backgroundColor: '#fff',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    zIndex: 1000,
+  },
+  scrollContent: {
+    flex: 1,
+  },
+  scrollContentContainer: {
+    padding: 16,
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+  },
+  saveButton: {
+    backgroundColor: '#8B5CF6',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  content: {
+    flex: 1,
+    padding: 16,
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666',
+    marginBottom: 6,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    backgroundColor: '#fff',
+  },
+  textArea: {
+    height: 80,
+    textAlignVertical: 'top',
+  },
+  categoryScroll: {
+    flexDirection: 'row',
+  },
+  categoryOption: {
+    backgroundColor: '#f5f5f5',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+  },
+  selectedCategory: {
+    backgroundColor: '#8B5CF6',
+  },
+  categoryText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  selectedCategoryText: {
+    color: '#fff',
+  },
+  imageGallery: {
+    flexDirection: 'row',
+  },
+  imageContainer: {
+    position: 'relative',
+    marginRight: 12,
+  },
+  productImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    backgroundColor: '#f5f5f5',
+  },
+  deleteImageButton: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  addImageButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#8B5CF6',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addImageText: {
+    fontSize: 12,
+    color: '#8B5CF6',
+    marginTop: 4,
+  },
+  variantItem: {
+    backgroundColor: '#f8f9fa',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  variantHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  variantColorPreview: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  variantTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  removeVariantButton: {
+    backgroundColor: '#fee2e2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  removeVariantText: {
+    color: '#dc2626',
+    fontSize: 12,
+  },
+  addVariantButton: {
+    backgroundColor: '#8B5CF6',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  addVariantText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  colorInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  colorInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    backgroundColor: '#fff',
+    marginRight: 8,
+  },
+  colorPickerButton: {
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: '#fff',
+  },
+  colorPreview: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  colorPickerModal: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    margin: 20,
+    minWidth: 300,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  colorGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  colorOption: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    margin: 5,
+    borderWidth: 2,
+    borderColor: '#ddd',
+  },
+  cameraButton: {
+    backgroundColor: '#8B5CF6',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  cameraButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  cancelButton: {
+    padding: 12,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: '#666',
+    fontWeight: '600',
+  },
+  variantItem: {
+    backgroundColor: '#f8f9fa',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  variantHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  variantColorPreview: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  variantTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  removeVariantButton: {
+    backgroundColor: '#fee2e2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  removeVariantText: {
+    color: '#dc2626',
+    fontSize: 12,
+  },
+  addVariantButton: {
+    backgroundColor: '#8B5CF6',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  errorInput: {
+    borderColor: '#DC2626',
+    borderWidth: 2,
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  stockRecordCard: {
+    backgroundColor: '#f8f9fa',
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  stockRecordTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 10,
+    color: '#495057',
+  },
+  updateButton: {
+    backgroundColor: '#28a745',
+    padding: 10,
+    borderRadius: 6,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  updateButtonText: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  alertModal: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 20,
+    margin: 20,
+    minWidth: 280,
+  },
+  alertTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  alertMessage: {
+    fontSize: 16,
+    marginBottom: 20,
+    textAlign: 'center',
+    color: '#666',
+  },
+  alertButton: {
+    backgroundColor: '#8B5CF6',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  alertButtonText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+});
